@@ -13,7 +13,7 @@ from orchestrator import agent
 from orchestrator.config import settings
 from orchestrator.tools import TOOLS
 
-app = FastAPI(title="Orchestrateur LLM", version="0.1.0")
+app = FastAPI(title="Orchestrateur LLM", version="0.1.1")
 
 
 class ChatRequest(BaseModel):
@@ -26,7 +26,9 @@ class DecisionRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "llm": settings.llm_provider, "mock_services": settings.use_mock_services}
+    return {"status": "ok", "version": app.version, "llm": settings.llm_provider,
+            "model": settings.groq_model if settings.llm_provider == "groq" else None,
+            "mock_services": settings.use_mock_services}
 
 
 @app.get("/tools")

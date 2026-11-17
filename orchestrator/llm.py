@@ -8,6 +8,7 @@ Les messages suivent le format OpenAI : system / user / assistant (tool_calls) /
 Le LLM ne fait que PROPOSER des appels d'outils ; il n'exécute rien.
 """
 
+import asyncio
 import json
 import re
 import uuid
@@ -176,13 +177,25 @@ class OpenAICompatibleLLM:
     async def next_step(self, messages: list[dict]) -> LLMStep:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         payload = {"model": self.model, "messages": messages, "tools": to_openai_schema(),
-                   "tool_choice": "auto", "temperature": 0}
-        try:
-            async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
-                resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
-                resp.raise_for_status()
-        except httpx.HTTPError as e:
-            raise LLMUnavailable(f"{self.name} : {type(e).__name__} {e}") from e
+                   "tool_choice": "auto", "parallel_tool_calls": True, "temperature": 0}
+        resp = None
+        for attempt in range(1 + settings.llm_retries):
+            try:
+                async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
+                    resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+            except httpx.HTTPError as e:
+                if attempt == settings.llm_retries:
+                    raise LLMUnavailable(f"{self.name} : {type(e).__name__} {e}") from e
+                await asyncio.sleep(1 + attempt)
+                continue
+            # 429 = limite de l'offre gratuite ; 5xx = panne passagère : on attend puis on réessaie.
+            if (resp.status_code == 429 or resp.status_code >= 500) and attempt < settings.llm_retries:
+                wait = _retry_after(resp, default=2 * (attempt + 1))
+                await asyncio.sleep(min(wait, 20))
+                continue
+            break
+        if resp.status_code >= 400:
+            raise LLMUnavailable(f"{self.name} : HTTP {resp.status_code} {resp.text[:200]}")
 
         msg = resp.json()["choices"][0]["message"]
         calls = []
@@ -193,6 +206,13 @@ class OpenAICompatibleLLM:
                 args = {"_invalid_json": c["function"].get("arguments")}
             calls.append(ToolCall(id=c["id"], name=c["function"]["name"], args=args))
         return LLMStep(tool_calls=calls, text=msg.get("content"))
+
+
+def _retry_after(resp: httpx.Response, default: float) -> float:
+    try:
+        return float(resp.headers.get("retry-after", default))
+    except ValueError:
+        return default
 
 
 def get_llm():

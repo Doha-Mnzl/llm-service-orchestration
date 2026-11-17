@@ -34,7 +34,7 @@ Ouvrir http://127.0.0.1:8000/docs et tester `POST /chat` avec
 | `GROQ_API_KEY` | clé Groq (ne jamais la commiter : fichier `.env`) | — |
 | `USE_MOCK_SERVICES` | `true` / `false` | `true` |
 | `FAIL_SERVICES` | ex. `inventory,analysis` : simule des pannes | vide |
-| `MAX_RETRIES`, `HTTP_TIMEOUT`, `MAX_TOOL_CALLS` | | `2`, `5`, `8` |
+| `MAX_RETRIES`, `HTTP_TIMEOUT`, `MAX_TOOL_CALLS` | | `2`, `5`, `15` |
 
 Exemple de panne simulée : `FAIL_SERVICES=inventory uvicorn orchestrator.main:app --port 8000`
 

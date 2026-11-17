@@ -23,8 +23,9 @@ class Settings:
         # --- LLM ---
         self.llm_provider = os.getenv("LLM_PROVIDER", "fake").lower()
         self.llm_timeout = float(os.getenv("LLM_TIMEOUT", "30"))
+        self.llm_retries = int(os.getenv("LLM_RETRIES", "2"))
         self.groq_api_key = os.getenv("GROQ_API_KEY", "")
-        self.groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")  # llama-3.3-70b retiré par Groq (août 2026)
         self.groq_url = os.getenv("GROQ_URL", "https://api.groq.com/openai/v1")
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.1")
@@ -42,8 +43,8 @@ class Settings:
         # --- Contrôle et fiabilité ---
         self.http_timeout = float(os.getenv("HTTP_TIMEOUT", "5"))
         self.max_retries = int(os.getenv("MAX_RETRIES", "2"))
-        self.max_tool_calls = int(os.getenv("MAX_TOOL_CALLS", "8"))
-        self.max_llm_steps = int(os.getenv("MAX_LLM_STEPS", "6"))
+        self.max_tool_calls = int(os.getenv("MAX_TOOL_CALLS", "15"))
+        self.max_llm_steps = int(os.getenv("MAX_LLM_STEPS", "15"))
 
 
 settings = Settings()
