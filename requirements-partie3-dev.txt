@@ -1,0 +1,5 @@
+# Dépendances de développement et de test de la Partie 3 (services, données, interface).
+-r services/sales/requirements.txt
+-r frontend/requirements.txt
+pytest>=8
+playwright>=1.40  # captures d'écran uniquement (facultatif)

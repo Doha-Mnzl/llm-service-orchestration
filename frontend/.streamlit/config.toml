@@ -1,0 +1,17 @@
+# Thème de l'interface (lu quand Streamlit est lancé depuis le dossier frontend/).
+[theme]
+base = "light"
+primaryColor = "#3A5FA8"
+backgroundColor = "#F4F6F8"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1E2A32"
+borderColor = "#D5DCE1"
+font = "'IBM Plex Sans':https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap, sans-serif"
+baseRadius = "6px"
+
+[client]
+showErrorDetails = "none"
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
