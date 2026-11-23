@@ -1,0 +1,58 @@
+# PROPOSITION pour la Partie 1 (Zakaria) — NON appliquée à docker-compose.yml.
+# Services de la Partie 3 à intégrer dans le Compose commun. Contexte de build : racine du dépôt.
+# Hypothèses D-6 : service PostgreSQL nommé `postgres`, base `lso`, utilisateur `lso`.
+# Persistance (H1) : `seed` ne réinitialise JAMAIS la base (--if-empty) ; un redémarrage conserve
+# décisions et audit. Le volume PostgreSQL reste défini par la Partie 1.
+# Secrets : CATALOG_TOKEN_ORCHESTRATOR vient d'un fichier .env non versionné (jamais dans ce fichier).
+# Privilèges (revue Codex) : avant un déploiement partagé, ne PAS utiliser le même rôle partout.
+#   - rôle « lso_migrator » (propriétaire des schémas) pour `seed` uniquement ;
+#   - rôles « lso_sales », « lso_inventory », « lso_catalog » : USAGE + SELECT/INSERT/UPDATE sur LEUR schéma
+#     seulement (aucun accès aux schémas des autres services), sans droit DDL ;
+#   à créer par la Partie 1 dans l'initialisation PostgreSQL ; les DATABASE_URL ci-dessous changent alors.
+
+services:
+  seed:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes: [".:/app:ro"]
+    command: sh -c "pip install -q -r data/requirements.txt && python -m data.migrate && python -m data.generate --seed 42 --if-empty && python -m data.verify"
+    environment:
+      DATABASE_URL: postgresql://lso:lso@postgres:5432/lso
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  sales:
+    build: { context: ., dockerfile: services/sales/Dockerfile }
+    environment: { DATABASE_URL: "postgresql://lso:lso@postgres:5432/lso", CURRENCY: MAD }
+    ports: ["8001:8001"]
+    depends_on: { seed: { condition: service_completed_successfully } }
+
+  inventory:
+    build: { context: ., dockerfile: services/inventory/Dockerfile }
+    environment: { DATABASE_URL: "postgresql://lso:lso@postgres:5432/lso" }
+    ports: ["8002:8002"]
+    depends_on: { seed: { condition: service_completed_successfully } }
+
+  catalog:
+    build: { context: ., dockerfile: services/catalog/Dockerfile }
+    environment:
+      DATABASE_URL: "postgresql://lso:lso@postgres:5432/lso"
+      CURRENCY: MAD
+      CATALOG_SERVICE_TOKENS: "orchestrator:${CATALOG_TOKEN_ORCHESTRATOR:?jeton requis}"
+      # DECISIONS_LEGACY_ORCHESTRATOR: "true"   # uniquement tant que la PR #1 n'envoie pas de jeton (non sûr)
+    ports: ["8003:8003"]
+    depends_on: { seed: { condition: service_completed_successfully } }
+
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SALES_URL: http://sales:8001
+      INVENTORY_URL: http://inventory:8002
+      CATALOG_URL: http://catalog:8003
+    ports: ["8501:8501"]
+    depends_on: [sales, inventory, catalog]
+
+  # L'orchestrateur (Partie 2) devra recevoir :
+  #   USE_MOCK_SERVICES=false SALES_URL=http://sales:8001 INVENTORY_URL=http://inventory:8002 CATALOG_URL=http://catalog:8003
+  #   CATALOG_TOKEN=${CATALOG_TOKEN_ORCHESTRATOR}   (envoyé en « Authorization: Bearer », voir decisions-equipe.md)
