@@ -22,12 +22,12 @@ class ServiceUnavailable(Exception):
         self.attempts = attempts
 
 
-async def _call_once(tool: Tool, args: dict) -> dict:
+async def _call_once(tool: Tool, args: dict, headers: dict[str, str]) -> dict:
     # Mode développement : faux services, avec pannes simulées.
     if settings.use_mock_services:
         if tool.service in settings.fail_services:
             raise ConnectionError("panne simulée (FAIL_SERVICES)")
-        return mock_services.HANDLERS[tool.name](**args)
+        return mock_services.call(tool.name, args, headers)
 
     if tool.method == "QUEUE":
         # TODO (avec Zakaria) : publier la tâche dans RabbitMQ et attendre la réponse (RPC).
@@ -42,21 +42,28 @@ async def _call_once(tool: Tool, args: dict) -> dict:
         if tool.method == "GET":
             resp = await client.get(url, params=other)
         else:
-            resp = await client.post(url, json=other)
+            resp = await client.post(url, json=other, headers=headers)
     if resp.status_code >= 500:
         raise ConnectionError(f"HTTP {resp.status_code}")
-    resp.raise_for_status()
+    resp.raise_for_status()  # 4xx = refus métier (401, 404, 409, 422…) : pas de reprise
     return resp.json()
 
 
-async def execute(tool: Tool, args: dict) -> tuple[dict, int]:
-    """Renvoie (résultat, nombre de tentatives). Lève ServiceUnavailable après les reprises."""
+async def execute(tool: Tool, args: dict, headers: dict[str, str] | None = None) -> tuple[dict, int]:
+    """Renvoie (résultat, nombre de tentatives).
+
+    - Panne (réseau, délai, 5xx) : reprises, puis ServiceUnavailable.
+    - Refus métier (4xx) : httpx.HTTPStatusError immédiatement, sans reprise.
+    Les en-têtes (jeton, Idempotency-Key) sont identiques à chaque reprise : une écriture
+    rejouée après un délai dépassé ne crée pas de doublon côté catalogue.
+    """
+    headers = headers or {}
     attempts = 0
     last_error = ""
     for attempt in range(1 + settings.max_retries):
         attempts = attempt + 1
         try:
-            return await asyncio.wait_for(_call_once(tool, args), timeout=settings.http_timeout), attempts
+            return await asyncio.wait_for(_call_once(tool, args, headers), timeout=settings.http_timeout), attempts
         except (httpx.TransportError, ConnectionError, asyncio.TimeoutError) as e:
             last_error = type(e).__name__ + (f" : {e}" if str(e) else "")
             if attempt < settings.max_retries:

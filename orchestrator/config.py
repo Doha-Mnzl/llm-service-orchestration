@@ -39,6 +39,9 @@ class Settings:
             "catalog": os.getenv("CATALOG_URL", "http://localhost:8003"),
         }
         self.rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+        # Jeton de service pour écrire les décisions dans le catalogue (Authorization: Bearer).
+        # Doit correspondre à l'entrée « orchestrator:<jeton> » de CATALOG_SERVICE_TOKENS côté catalogue.
+        self.catalog_token = os.getenv("CATALOG_TOKEN", "")
 
         # --- Contrôle et fiabilité ---
         self.http_timeout = float(os.getenv("HTTP_TIMEOUT", "5"))

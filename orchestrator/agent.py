@@ -17,6 +17,7 @@ import time
 import uuid
 from typing import Any, Literal, Optional
 
+import httpx
 from pydantic import BaseModel, ValidationError
 
 from orchestrator.config import settings
@@ -179,16 +180,46 @@ async def run_chat(message: str) -> ChatResponse:
                         llm=llm_name, trace=trace, warnings=warnings, pending_actions=pending)
 
 
-async def decide(action_id: str, approved: bool) -> dict:
-    """Validation humaine : exécute (ou abandonne) une action en attente."""
-    action = PENDING.pop(action_id, None)
+def _catalog_headers(action_id: str) -> dict[str, str]:
+    """En-têtes du contrat sécurisé du catalogue (docs/partie3/api.md, Partie 3)."""
+    headers = {"Idempotency-Key": action_id}  # stable : la même pour chaque reprise de cette action
+    if settings.catalog_token:
+        headers["Authorization"] = f"Bearer {settings.catalog_token}"
+    return headers
+
+
+def _error_detail(resp: httpx.Response) -> str:
+    try:
+        detail = resp.json().get("detail", resp.text)
+    except ValueError:
+        detail = resp.text
+    return str(detail)[:300]
+
+
+async def decide(action_id: str, approved: bool, decided_by: str) -> dict:
+    """Validation humaine : envoie la décision (acceptée OU refusée) au catalogue.
+
+    - Les deux cas sont enregistrés, pour un historique complet.
+    - Les champs humains (decision, decided_by) sont ajoutés ici, après la validation des arguments
+      du LLM : le LLM ne peut ni les choisir ni les modifier.
+    - Si le catalogue refuse (401, 409, 422…) ou est en panne, l'action reste en attente :
+      une proposition n'est jamais perdue.
+    """
+    action = PENDING.pop(action_id, None)  # retirée pendant l'appel : pas de double traitement
     if action is None:
         return {"status": "not_found"}
-    if not approved:
-        return {"status": "refused", "action": action.model_dump()}
+    decision = "approved" if approved else "refused"
+    payload = {**action.args, "decision": decision, "decided_by": decided_by}
     try:
-        result, _ = await execute(TOOLS[action.tool], action.args)
+        result, _ = await execute(TOOLS[action.tool], payload, headers=_catalog_headers(action_id))
     except ServiceUnavailable as e:
-        PENDING[action_id] = action  # on garde l'action pour réessayer plus tard
-        return {"status": "failed", "detail": str(e)}
-    return {"status": "executed", "result": result}
+        PENDING[action_id] = action
+        return {"status": "failed", "detail": str(e), "action": action.model_dump()}
+    except httpx.HTTPStatusError as e:
+        PENDING[action_id] = action
+        code = e.response.status_code
+        return {"status": "failed", "catalog_status": code,
+                "detail": f"Le catalogue a refusé l'écriture (HTTP {code}) : {_error_detail(e.response)}",
+                "action": action.model_dump()}
+    return {"status": "executed" if approved else "refused", "decided_by": decided_by,
+            "result": result, "action": action.model_dump()}

@@ -5,6 +5,8 @@ Les réponses suivent le format proposé dans docs/api.md : quand les vrais serv
 seront prêts, il suffit de passer USE_MOCK_SERVICES=false.
 """
 
+import httpx
+
 PRODUCTS = {
     "P001": {"name": "Câble USB-C 1 m", "category": "câbles"},
     "P002": {"name": "Chargeur 20 W", "category": "chargeurs"},
@@ -100,12 +102,38 @@ def search_supplier_catalog(category: str, query: str | None = None, max_price: 
     return {"items": items}
 
 
+# ---- Faux catalogue : même contrat sécurisé que le vrai service de Manal (docs/partie3/api.md) ----
 _decisions: list[dict] = []
+REQUIRED_TOKEN: str | None = None  # les tests peuvent l'activer pour simuler un refus 401
 
 
-def record_decision(product_id: str, action: str, reason: str, replacement_id: str | None = None) -> dict:
-    d = {"decision_id": len(_decisions) + 1, "product_id": product_id, "action": action,
-         "replacement_id": replacement_id, "reason": reason, "status": "recorded"}
+def _reject(status: int, detail: str):
+    req = httpx.Request("POST", "http://mock-catalog/decisions")
+    httpx.Response(status, request=req, json={"detail": detail}).raise_for_status()
+
+
+def record_decision(product_id: str, action: str, reason: str, replacement_id: str | None = None,
+                    decision: str | None = None, decided_by: str | None = None,
+                    headers: dict | None = None) -> dict:
+    headers = headers or {}
+    if REQUIRED_TOKEN is not None and headers.get("Authorization") != f"Bearer {REQUIRED_TOKEN}":
+        _reject(401, "jeton de service invalide")
+    key = headers.get("Idempotency-Key")
+    if not key:
+        _reject(400, "clé d'idempotence obligatoire")
+    if decision not in ("approved", "refused", "pending"):
+        _reject(422, "champ « decision » obligatoire")
+    if decision != "pending" and not decided_by:
+        _reject(422, "champ « decided_by » obligatoire")
+    fields = {"product_id": product_id, "action": action, "replacement_id": replacement_id, "reason": reason,
+              "decision_status": decision, "decided_by": decided_by}
+    for d in _decisions:  # idempotence : même clé ⇒ même décision, sinon conflit
+        if d["idempotency_key"] == key:
+            if any(d[k] != v for k, v in fields.items()):
+                _reject(409, "clé d'idempotence déjà utilisée pour une requête différente")
+            return {**d, "idempotent_replay": True}
+    d = {"decision_id": len(_decisions) + 1, **fields, "idempotency_key": key,
+         "source": "orchestrator", "status": "recorded", "idempotent_replay": False}
     _decisions.append(d)
     return d
 
@@ -120,3 +148,9 @@ HANDLERS = {
     "search_supplier_catalog": search_supplier_catalog,
     "record_decision": record_decision,
 }
+
+
+def call(name: str, args: dict, headers: dict) -> dict:
+    if name == "record_decision":
+        return record_decision(**args, headers=headers)
+    return HANDLERS[name](**args)

@@ -13,7 +13,7 @@ from orchestrator import agent
 from orchestrator.config import settings
 from orchestrator.tools import TOOLS
 
-app = FastAPI(title="Orchestrateur LLM", version="0.1.1")
+app = FastAPI(title="Orchestrateur LLM", version="0.2.0")
 
 
 class ChatRequest(BaseModel):
@@ -22,13 +22,16 @@ class ChatRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     approved: bool
+    decided_by: str = Field(..., min_length=1, max_length=100, pattern=r"\S",
+                            description="Nom du responsable qui valide ou refuse (saisi dans l'interface)")
 
 
 @app.get("/health")
 def health():
     return {"status": "ok", "version": app.version, "llm": settings.llm_provider,
             "model": settings.groq_model if settings.llm_provider == "groq" else None,
-            "mock_services": settings.use_mock_services}
+            "mock_services": settings.use_mock_services,
+            "catalog_token_configured": bool(settings.catalog_token)}
 
 
 @app.get("/tools")
@@ -50,7 +53,7 @@ def pending_actions():
 
 @app.post("/actions/{action_id}/decision")
 async def decide(action_id: str, req: DecisionRequest):
-    res = await agent.decide(action_id, req.approved)
+    res = await agent.decide(action_id, req.approved, req.decided_by.strip())
     if res["status"] == "not_found":
         raise HTTPException(404, "Action inconnue ou déjà traitée")
     return res

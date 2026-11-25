@@ -54,16 +54,23 @@ Ports proposés : ventes `8001`, stocks `8002`, catalogue `8003`, orchestrateur 
             "category": "câbles", "price": 6.9}]}
 ```
 
-### `POST /decisions` (appelé seulement après validation humaine)
-```json
+### `POST /decisions` (appelé par l'orchestrateur, seulement après la décision humaine)
+
+Contrat sécurisé du catalogue (détails : `docs/partie3/api.md`, Partie 3).
+
+```http
+POST /decisions
+Authorization: Bearer <CATALOG_TOKEN>
+Idempotency-Key: <action_id>
+
 {"product_id": "P005", "action": "replace", "replacement_id": "S104",
- "reason": "Ventes en forte baisse et stock élevé"}
+ "reason": "Ventes en forte baisse et stock élevé",
+ "decision": "approved", "decided_by": "doha"}
 ```
-Réponse :
-```json
-{"decision_id": 1, "product_id": "P005", "action": "replace", "replacement_id": "S104",
- "reason": "...", "status": "recorded"}
-```
+`decision` vaut `approved` ou `refused` : les refus sont aussi enregistrés.
+Réponses : `201` créée ; `200` rejeu identique (même clé) ; `401` jeton absent ou invalide ;
+`404` produit inconnu ; `409` même clé avec d'autres champs ; `422` données invalides.
+Sur toute erreur, l'orchestrateur garde la proposition en attente.
 
 ---
 
