@@ -30,8 +30,8 @@ docker-compose.yml   Déploiement
 
 | Membre | GitHub | Responsabilité |
 |---|---|---|
-| Doha Mounazil | [@Doha-Mnzl](https://github.com/Doha-Mnzl) | _À définir_ |
-| Manal Farouqi | [@manalfarouq](https://github.com/manalfarouq) | _À définir_ |
-| Zakaria Maghouri | _À venir_ | _À définir_ |
+| Doha Mounazil | [@Doha-Mnzl](https://github.com/Doha-Mnzl) | Partie 2 : orchestrateur et LLM |
+| Manal Farouqi | [@manalfarouq](https://github.com/manalfarouq) | Partie 3 : données, services et interface |
+| Zakaria Maghouri | [@ZakariaMaghouri](https://github.com/ZakariaMaghouri) | Partie 1 : infrastructure, analyse et fiabilité |
 
 Méthode de travail : voir [CONTRIBUTING.md](CONTRIBUTING.md).
